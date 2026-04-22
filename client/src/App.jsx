@@ -22,7 +22,6 @@ export default function App() {
 
   const chatRef = useRef(null);
 
-  // 🎨 USER COLOR
   function getColor(name = "") {
     const colors = ["#00ff9d", "#00c3ff", "#ff7bff", "#ffd166", "#ff4d6d"];
     let sum = 0;
@@ -73,6 +72,11 @@ export default function App() {
       }));
     });
 
+    // 🔁 AUTO RECONNECT (ADDED FIX)
+    socket.io.on("reconnect", () => {
+      socket.emit("join", { name, room });
+    });
+
     // 🎤 VOICE
     socket.on("user-joined", async (id) => {
       const pc = createPeerConnection(id);
@@ -109,7 +113,7 @@ export default function App() {
     socket.on("ice-candidate", ({ from, candidate }) => {
       peerConnections[from]?.addIceCandidate(candidate);
     });
-  }, []);
+  }, [name, room]);
 
   // AUTO SCROLL
   useEffect(() => {
@@ -143,7 +147,6 @@ export default function App() {
     setIsMuted(!isMuted);
   }
 
-  // BUTTONS
   function invite() {
     try {
       navigator.clipboard.writeText(window.location.href);
@@ -165,7 +168,6 @@ export default function App() {
     alert("Settings coming soon ⚙");
   }
 
-  // 🔥🔥🔥 FINAL PRO AUDIO ENGINE
   function createPeerConnection(id) {
     const pc = new RTCPeerConnection({
       iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
@@ -188,20 +190,15 @@ export default function App() {
       const ctx = new AudioContext();
       const source = ctx.createMediaStreamSource(stream);
 
-      // 🎧 Stereo (left/right)
       const panner = ctx.createStereoPanner();
-
-      // 🔊 Distance volume
       const gain = ctx.createGain();
 
       const userIndex = users.findIndex((u) => u.id === id);
       const total = users.length > 1 ? users.length : 2;
 
-      // 🎯 PAN (-1 left → +1 right)
       let pan = (userIndex / (total - 1)) * 2 - 1;
       panner.pan.value = pan;
 
-      // 🎯 DISTANCE (center louder)
       const distanceFromCenter = Math.abs(userIndex - total / 2);
       gain.gain.value = 1 - distanceFromCenter / total;
 
@@ -216,7 +213,6 @@ export default function App() {
   const getAvatar = (name) =>
     `https://api.dicebear.com/7.x/initials/svg?seed=${name}`;
 
-  // LOGIN
   if (!entered) {
     return (
       <div className="login">
@@ -230,7 +226,6 @@ export default function App() {
     );
   }
 
-  // MAIN UI (UNCHANGED)
   return (
     <div className="appContainer">
       <div className="voiceSection">
