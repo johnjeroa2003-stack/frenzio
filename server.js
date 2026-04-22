@@ -18,7 +18,6 @@ io.on("connection", (socket) => {
     socket.join(room);
 
     io.to(room).emit("userList", getUsers(room));
-
     socket.to(room).emit("user-joined", socket.id);
   });
 
@@ -84,15 +83,12 @@ function getUsers(room) {
     }));
 }
 
+// ✅ ONLY ONE ROOT ROUTE
 app.get("/", (req, res) => {
   res.send("Frenzio Backend Running 🚀");
 });
 
-const express = require("express");
-const app = express();
+// ⚠️ IMPORTANT: use dynamic PORT for Render
+const PORT = process.env.PORT || 3000;
 
-app.get("/", (req, res) => {
-  res.send("Frenzio Backend Running 🚀");
-});
-
-server.listen(3000, () => console.log("🚀 Running on http://localhost:3000"));
+server.listen(PORT, () => console.log(`🚀 Running on port ${PORT}`));
