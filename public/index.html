@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Free Frenzio</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="login">
+  <div class="card">
+    <h2>Free Frenzio</h2>
+    <input id="nameInput" placeholder="Enter your name">
+    <button onclick="enterApp()">Enter</button>
+  </div>
+</div>
+
+<!-- MAIN APP -->
+<div id="app" class="hidden">
+
+  <!-- SIDEBAR -->
+  <aside>
+    <h3>Online</h3>
+    <ul id="users"></ul>
+  </aside>
+
+  <!-- CHAT -->
+  <main>
+    <div id="chat"></div>
+
+    <div class="inputBar">
+      <input id="msgInput" placeholder="Type message...">
+      <button onclick="send()">➤</button>
+    </div>
+  </main>
+
+</div>
+
+<!-- DM MODAL -->
+<div id="dmModal" class="modal hidden">
+  <div class="modalContent">
+    <h3 id="dmTitle"></h3>
+    <div id="dmChat"></div>
+
+    <div class="inputBar">
+      <input id="dmInput">
+      <button onclick="sendDM()">Send</button>
+    </div>
+  </div>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="app.js"></script>
+
+</body>
+</html>
