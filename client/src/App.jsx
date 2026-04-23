@@ -20,7 +20,7 @@ export default function App() {
 
   const [volumeLevel, setVolumeLevel] = useState(0);
 
-  // 🔥 GLOBAL ROOM LIST
+  // 🔥 NEW: GLOBAL ROOM LIST
   const [roomList, setRoomList] = useState([]);
 
   const chatRef = useRef(null);
@@ -35,7 +35,7 @@ export default function App() {
   const hostId = users[0]?.id;
   const speakingCount = Object.values(speakingUsers).filter(Boolean).length;
 
-  // 🎤 INIT (RUN ONLY ONCE)
+  // 🎤 INIT
   useEffect(() => {
     navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
       localStream = stream;
@@ -75,16 +75,14 @@ export default function App() {
       }));
     });
 
-    // 🔥 GLOBAL ROOM LIST
+    // 🔥 NEW: LISTEN GLOBAL ROOMS
     socket.on("roomList", (rooms) => {
       setRoomList(rooms);
     });
 
-    // 🔁 SAFE RECONNECT
+    // 🔁 AUTO RECONNECT
     socket.io.on("reconnect", () => {
-      if (name && room) {
-        socket.emit("join", { name, room });
-      }
+      socket.emit("join", { name, room });
     });
 
     // 🎤 VOICE
@@ -123,7 +121,7 @@ export default function App() {
     socket.on("ice-candidate", ({ from, candidate }) => {
       peerConnections[from]?.addIceCandidate(candidate);
     });
-  }, []); // ✅ FIXED HERE
+  }, [name, room]);
 
   // AUTO SCROLL
   useEffect(() => {
@@ -222,7 +220,7 @@ export default function App() {
   const getAvatar = (name) =>
     `https://api.dicebear.com/7.x/initials/svg?seed=${name}`;
 
-  // LOGIN SCREEN
+  // 🔥 LOGIN SCREEN WITH ROOMS
   if (!entered) {
     return (
       <div className="login">
@@ -239,6 +237,7 @@ export default function App() {
 
           <button onClick={enter}>Enter</button>
 
+          {/* 🔥 GLOBAL ROOM LIST UI */}
           <div style={{ marginTop: 20 }}>
             <h3>Live Rooms</h3>
 
@@ -264,7 +263,6 @@ export default function App() {
     );
   }
 
-  // MAIN UI
   return (
     <div className="appContainer">
       <div className="voiceSection">
@@ -307,11 +305,56 @@ export default function App() {
                   <img src={getAvatar(u.name)} />
                   {isHost && <span className="hostBadge">★</span>}
                   <span className="mic">{isMuted ? "🔇" : "🎤"}</span>
+                  <span className="ring r1"></span>
+                  <span className="ring r2"></span>
                 </div>
                 <p className="username">{u.name}</p>
               </div>
             );
           })}
+        </div>
+
+        <div className="controls">
+          <button className="btn" onClick={invite}>
+            Invite
+          </button>
+          <button className="btn" onClick={showPeople}>
+            People
+          </button>
+          <button className="muteBtn" onClick={toggleMute}>
+            {isMuted ? "Unmute" : "Mute"}
+          </button>
+          <button className="btn leave" onClick={leaveRoom}>
+            Leave
+          </button>
+          <button className="btn" onClick={openSettings}>
+            ⚙
+          </button>
+        </div>
+      </div>
+
+      <div className="chatSection">
+        <div className="chatHeader">
+          💬 Chat <span>{users.length} online</span>
+        </div>
+
+        <div className="chatMessages" ref={chatRef}>
+          {messages.map((m, i) => (
+            <div key={i} className="chatMsg">
+              <b>{m.user}</b>
+              <p>{m.text}</p>
+            </div>
+          ))}
+        </div>
+
+        <div className="chatInput">
+          <input
+            value={msg}
+            onChange={(e) => setMsg(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && send()}
+            placeholder="Type message..."
+          />
+          <button onClick={send}>Send</button>
         </div>
       </div>
     </div>
