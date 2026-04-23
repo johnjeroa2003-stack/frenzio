@@ -38,6 +38,7 @@ export default function App() {
 
   // 🎤 INIT
   useEffect(() => {
+    // 🎤 GET MICROPHONE
     navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
       localStream = stream;
 
@@ -61,16 +62,17 @@ export default function App() {
       detect();
     });
 
+    // 💬 CHAT
     socket.on("message", (data) => {
       if (data.type === "public") {
         setMessages((p) => [...p, data]);
       }
     });
 
+    // 👥 USER LIST + 🔥 CONNECT TO ALL USERS
     socket.on("userList", (userList) => {
       setUsers(userList);
 
-      // 🔥 NEW: connect to existing users
       userList.forEach(async (u) => {
         if (u.id === socket.id) return;
 
@@ -89,6 +91,7 @@ export default function App() {
       });
     });
 
+    // 🎤 SPEAKING STATUS
     socket.on("speaking", ({ id, isSpeaking }) => {
       setSpeakingUsers((prev) => ({
         ...prev,
@@ -96,7 +99,7 @@ export default function App() {
       }));
     });
 
-    // 🔥 NEW: LISTEN GLOBAL ROOMS
+    // 🌐 ROOMS
     socket.on("roomList", (rooms) => {
       setRoomList(rooms);
     });
@@ -106,29 +109,25 @@ export default function App() {
       socket.emit("join", { name, room });
     });
 
-    // 🎤 VOICE
+    // 🎤 NEW USER JOINED
     socket.on("user-joined", async (id) => {
-      const pc = createPeerConnection(id);
-pc.oniceconnectionstatechange = () => {
-  console.log("ICE STATE:", pc.iceConnectionState);
-};
+      if (id === socket.id) return;
 
-pc.onconnectionstatechange = () => {
-  console.log("CONNECTION:", pc.connectionState);
-};
-pc.oniceconnectionstatechange = () => {
-  console.log("ICE STATE:", pc.iceConnectionState);
-};
-      localStream?.getAudioTracks().forEach((track) => {
-        pc.addTrack(track, localStream);
-      });
+      if (!peerConnections[id]) {
+        const pc = createPeerConnection(id);
 
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
+        localStream?.getAudioTracks().forEach((track) => {
+          pc.addTrack(track, localStream);
+        });
 
-      socket.emit("offer", { to: id, offer });
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+
+        socket.emit("offer", { to: id, offer });
+      }
     });
 
+    // 📡 RECEIVE OFFER
     socket.on("offer", async ({ from, offer }) => {
       const pc = createPeerConnection(from);
 
@@ -137,19 +136,44 @@ pc.oniceconnectionstatechange = () => {
       localStream?.getAudioTracks().forEach((track) => {
         pc.addTrack(track, localStream);
       });
+
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
 
       socket.emit("answer", { to: from, answer });
     });
 
+    // 📡 RECEIVE ANSWER
     socket.on("answer", ({ from, answer }) => {
       peerConnections[from]?.setRemoteDescription(answer);
     });
 
+    // 📡 ICE
     socket.on("ice-candidate", ({ from, candidate }) => {
       peerConnections[from]?.addIceCandidate(candidate);
     });
+
+    // 🧹 CLEANUP ON DISCONNECT
+    socket.on("disconnect", () => {
+      Object.values(peerConnections).forEach((pc) => pc.close());
+      Object.values(remoteAudios).forEach((a) => a.remove());
+
+      for (let key in peerConnections) delete peerConnections[key];
+      for (let key in remoteAudios) delete remoteAudios[key];
+    });
+
+    // 🧹 CLEANUP ON RE-RENDER
+    return () => {
+      socket.off("message");
+      socket.off("userList");
+      socket.off("speaking");
+      socket.off("roomList");
+      socket.off("offer");
+      socket.off("answer");
+      socket.off("ice-candidate");
+      socket.off("user-joined");
+      socket.off("disconnect");
+    };
   }, [name, room]);
 
   // AUTO SCROLL
@@ -208,6 +232,9 @@ pc.oniceconnectionstatechange = () => {
   }
 
   function leaveRoom() {
+    if (localStream) {
+      localStream.getTracks().forEach((track) => track.stop());
+    }
     window.location.reload();
   }
 
