@@ -90,13 +90,20 @@ export default function App() {
     socket.on("user-joined", async (id) => {
       const pc = createPeerConnection(id);
 pc.onconnectionstatechange = () => {
+  pc.oniceconnectionstatechange = () => {
+    console.log("ICE STATE:", pc.iceConnectionState);
+  };
+
+  pc.onconnectionstatechange = () => {
+    console.log("CONNECTION:", pc.connectionState);
+  };
   console.log("CONNECTION STATE:", pc.connectionState);
 };
 
 pc.oniceconnectionstatechange = () => {
   console.log("ICE STATE:", pc.iceConnectionState);
 };
-      localStream?.getTracks().forEach((track) => {
+      localStream?.getAudioTracks().forEach((track) => {
         pc.addTrack(track, localStream);
       });
 
@@ -227,18 +234,14 @@ pc.oniceconnectionstatechange = () => {
         audio.srcObject = stream;
         audio.autoplay = true;
         audio.playsInline = true;
-        audio.muted = false; // 🔥 ADD THIS
+        audio.controls = false;
 
-        // 🔥 ADD THIS (attach to DOM so browser allows audio)
         document.body.appendChild(audio);
 
-        // 🔥 STRONG PLAY FIX
-        const playAudio = () => {
+        audio.onloadedmetadata = () => {
           audio.play().catch(() => {});
         };
 
-        audio.onloadedmetadata = playAudio;
-        setTimeout(playAudio, 500);
         remoteAudios[id] = audio;
       }
 
