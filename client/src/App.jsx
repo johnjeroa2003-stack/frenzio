@@ -6,35 +6,30 @@ const socket = io("https://frenzio-backend.onrender.com");
 const peerConnections = {};
 let localStream;
 
-// ✅ USE ONLY ONE KEY
-const GIPHY_KEY = "PASTE_YOUR_REAL_KEY_HERE";
-
 export default function App() {
   const [name, setName] = useState("");
   const [room, setRoom] = useState("");
   const [entered, setEntered] = useState(false);
 
   const [users, setUsers] = useState([]);
-
-  const [messages, setMessages] = useState(() => {
-    const saved = localStorage.getItem("chat");
-    return saved ? JSON.parse(saved) : [];
-  });
-
+  const [messages, setMessages] = useState([]);
   const [msg, setMsg] = useState("");
 
   const [speakingUsers, setSpeakingUsers] = useState({});
   const [isMuted, setIsMuted] = useState(false);
-  const [volumeLevel, setVolumeLevel] = useState(0);
 
-  const [typingUser, setTypingUser] = useState("");
-  const [showEmoji, setShowEmoji] = useState(false);
-  const [showGif, setShowGif] = useState(false);
-  const [gifResults, setGifResults] = useState([]);
-  const [gifSearch, setGifSearch] = useState("");
+  const [volumeLevel, setVolumeLevel] = useState(0);
 
   const chatRef = useRef(null);
 
+  function getColor(name = "") {
+    const colors = ["#00ff9d", "#00c3ff", "#ff7bff", "#ffd166", "#ff4d6d"];
+    let sum = 0;
+    for (let i = 0; i < name.length; i++) sum += name.charCodeAt(i);
+    return colors[sum % colors.length];
+  }
+
+  const hostId = users[0]?.id;
   const speakingCount = Object.values(speakingUsers).filter(Boolean).length;
 
   // 🎤 INIT
@@ -64,16 +59,7 @@ export default function App() {
 
     socket.on("message", (data) => {
       if (data.type === "public") {
-        const newMsg = {
-          ...data,
-          time: new Date().toLocaleTimeString(),
-        };
-
-        setMessages((p) => {
-          const updated = [...p, newMsg];
-          localStorage.setItem("chat", JSON.stringify(updated));
-          return updated;
-        });
+        setMessages((p) => [...p, data]);
       }
     });
 
@@ -86,10 +72,7 @@ export default function App() {
       }));
     });
 
-    socket.on("typing", ({ user, isTyping }) => {
-      setTypingUser(isTyping ? user : "");
-    });
-
+    // 🔁 AUTO RECONNECT (ADDED FIX)
     socket.io.on("reconnect", () => {
       socket.emit("join", { name, room });
     });
@@ -134,10 +117,7 @@ export default function App() {
 
   // AUTO SCROLL
   useEffect(() => {
-    chatRef.current?.scrollTo({
-      top: chatRef.current.scrollHeight,
-      behavior: "smooth",
-    });
+    chatRef.current?.scrollTo(0, chatRef.current.scrollHeight);
   }, [messages]);
 
   // ENTER
@@ -148,59 +128,13 @@ export default function App() {
   };
 
   // SEND
-  const send = (custom = null) => {
-    const text = custom || msg;
-    if (!text.trim()) return;
+  const send = () => {
+    if (!msg.trim()) return;
 
-    const newMsg = {
-      user: "Me",
-      text,
-      time: new Date().toLocaleTimeString(),
-    };
-
-    socket.emit("sendMessage", text);
-
-    setMessages((p) => {
-      const updated = [...p, newMsg];
-      localStorage.setItem("chat", JSON.stringify(updated));
-      return updated;
-    });
-
+    socket.emit("sendMessage", msg);
+    setMessages((p) => [...p, { user: "Me", text: msg }]);
     setMsg("");
   };
-
-  // TYPING
-  function handleTyping(e) {
-    setMsg(e.target.value);
-
-    socket.emit("typing", { user: name, isTyping: true });
-
-    setTimeout(() => {
-      socket.emit("typing", { user: name, isTyping: false });
-    }, 1000);
-  }
-
-  // EMOJI
-  function addEmoji(e) {
-    setMsg((prev) => prev + e);
-  }
-
-  // GIF
-  async function searchGif() {
-    if (!gifSearch) return;
-
-    const res = await fetch(
-      `https://api.giphy.com/v1/gifs/search?api_key=${GIPHY_KEY}&q=${gifSearch}&limit=12`,
-    );
-
-    const data = await res.json();
-    setGifResults(data.data);
-  }
-
-  function sendGif(url) {
-    send(`GIF:${url}`);
-    setShowGif(false);
-  }
 
   // MUTE
   function toggleMute() {
@@ -213,9 +147,25 @@ export default function App() {
     setIsMuted(!isMuted);
   }
 
+  function invite() {
+    try {
+      navigator.clipboard.writeText(window.location.href);
+      alert("Invite link copied!");
+    } catch {
+      prompt("Copy link:", window.location.href);
+    }
+  }
+
+  function showPeople() {
+    alert(users.map((u) => u.name).join("\n"));
+  }
+
   function leaveRoom() {
-    localStorage.removeItem("chat");
     window.location.reload();
+  }
+
+  function openSettings() {
+    alert("Settings coming soon ⚙");
   }
 
   function createPeerConnection(id) {
@@ -236,20 +186,38 @@ export default function App() {
 
     pc.ontrack = (e) => {
       const stream = e.streams[0];
-      const audio = document.createElement("audio");
-      audio.srcObject = stream;
-      audio.autoplay = true;
-      document.body.appendChild(audio);
+
+      const ctx = new AudioContext();
+      const source = ctx.createMediaStreamSource(stream);
+
+      const panner = ctx.createStereoPanner();
+      const gain = ctx.createGain();
+
+      const userIndex = users.findIndex((u) => u.id === id);
+      const total = users.length > 1 ? users.length : 2;
+
+      let pan = (userIndex / (total - 1)) * 2 - 1;
+      panner.pan.value = pan;
+
+      const distanceFromCenter = Math.abs(userIndex - total / 2);
+      gain.gain.value = 1 - distanceFromCenter / total;
+
+      source.connect(panner);
+      panner.connect(gain);
+      gain.connect(ctx.destination);
     };
 
     return pc;
   }
 
+  const getAvatar = (name) =>
+    `https://api.dicebear.com/7.x/initials/svg?seed=${name}`;
+
   if (!entered) {
     return (
       <div className="login">
         <div className="card">
-          <h1>Frenzio</h1>
+          <h1>Free Frenzio</h1>
           <input placeholder="Name" onChange={(e) => setName(e.target.value)} />
           <input placeholder="Room" onChange={(e) => setRoom(e.target.value)} />
           <button onClick={enter}>Enter</button>
@@ -259,96 +227,98 @@ export default function App() {
   }
 
   return (
-    <div className="wa-container">
-      {/* SIDEBAR */}
-      <div className="wa-sidebar">
-        <div className="wa-sidebar-header">
-          <div className="avatar">{name[0]}</div>
-          <h3>{name}</h3>
+    <div className="appContainer">
+      <div className="voiceSection">
+        <div className="topBar">
+          <div className="logo">
+            Free <span>Frenzio</span>
+          </div>
+          <div className="badges">
+            <span>🟢 {room}</span>
+            <span>👥 {users.length}</span>
+          </div>
         </div>
 
-        <div className="wa-room active">
-          <div className="avatar">{room[0]}</div>
-          <div>
-            <b>{room}</b>
-            <p>{users.length} online</p>
+        <div className="circleArea">
+          <div
+            className="centerPulse"
+            style={{ transform: `scale(${1 + volumeLevel / 200})` }}
+          >
+            <div
+              className="wave"
+              style={{ boxShadow: `0 0 ${20 + volumeLevel}px #00ff9d` }}
+            ></div>
+            <p>{speakingCount} speaking</p>
           </div>
+
+          {users.map((u, i) => {
+            const angle = i * (360 / users.length);
+            const color = getColor(u.name);
+            const isHost = u.id === hostId;
+
+            return (
+              <div
+                key={u.id}
+                className={`userBubble ${speakingUsers[u.id] ? "active" : ""}`}
+                style={{
+                  transform: `rotate(${angle}deg) translate(230px) rotate(-${angle}deg)`,
+                }}
+              >
+                <div className="avatarWrap" style={{ "--glow": color }}>
+                  <img src={getAvatar(u.name)} />
+                  {isHost && <span className="hostBadge">★</span>}
+                  <span className="mic">{isMuted ? "🔇" : "🎤"}</span>
+                  <span className="ring r1"></span>
+                  <span className="ring r2"></span>
+                </div>
+                <p className="username">{u.name}</p>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="controls">
+          <button className="btn" onClick={invite}>
+            Invite
+          </button>
+          <button className="btn" onClick={showPeople}>
+            People
+          </button>
+          <button className="muteBtn" onClick={toggleMute}>
+            {isMuted ? "Unmute" : "Mute"}
+          </button>
+          <button className="btn leave" onClick={leaveRoom}>
+            Leave
+          </button>
+          <button className="btn" onClick={openSettings}>
+            ⚙
+          </button>
         </div>
       </div>
 
-      {/* CHAT */}
-      <div className="wa-chat">
-        <div className="wa-header">
-          <div className="avatar">{room[0]}</div>
-          <div>
-            <b>{room}</b>
-            <p>{typingUser || `${users.length} online`}</p>
-          </div>
-
-          <div>
-            <button onClick={toggleMute}>{isMuted ? "🔇" : "🎤"}</button>
-            <button onClick={leaveRoom}>🚪</button>
-          </div>
+      <div className="chatSection">
+        <div className="chatHeader">
+          💬 Chat <span>{users.length} online</span>
         </div>
 
-        {/* MESSAGES */}
-        <div className="wa-messages" ref={chatRef}>
+        <div className="chatMessages" ref={chatRef}>
           {messages.map((m, i) => (
-            <div key={i} className={`wa-msg ${m.user === "Me" ? "me" : ""}`}>
-              <div className="bubble">
-                <small>{m.user}</small>
-
-                {m.text.startsWith("GIF:") ? (
-                  <img src={m.text.replace("GIF:", "")} />
-                ) : (
-                  <p>{m.text}</p>
-                )}
-
-                <span>{m.time}</span>
-              </div>
+            <div key={i} className="chatMsg">
+              <b>{m.user}</b>
+              <p>{m.text}</p>
             </div>
           ))}
         </div>
 
-        {/* INPUT */}
-        <div className="wa-input">
-          <button onClick={() => setShowEmoji(!showEmoji)}>😊</button>
-
+        <div className="chatInput">
           <input
             value={msg}
-            onChange={handleTyping}
+            onChange={(e) => setMsg(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && send()}
+            placeholder="Type message..."
           />
-
-          <button onClick={() => setShowGif(!showGif)}>GIF</button>
-          <button onClick={() => send()}>➤</button>
+          <button onClick={send}>Send</button>
         </div>
-
-        {showEmoji && (
-          <div className="emoji-box">
-            {["😀", "😂", "😍", "🔥", "👍"].map((e, i) => (
-              <span key={i} onClick={() => addEmoji(e)}>
-                {e}
-              </span>
-            ))}
-          </div>
-        )}
-
-        {showGif && (
-          <div className="gif-box">
-            <input onChange={(e) => setGifSearch(e.target.value)} />
-            <button onClick={searchGif}>Search</button>
-
-            {gifResults.map((g) => (
-              <img
-                key={g.id}
-                src={g.images.fixed_height.url}
-                width={100}
-                onClick={() => sendGif(g.images.fixed_height.url)}
-              />
-            ))}
-          </div>
-        )}
       </div>
     </div>
   );
