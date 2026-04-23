@@ -89,7 +89,13 @@ export default function App() {
     // 🎤 VOICE
     socket.on("user-joined", async (id) => {
       const pc = createPeerConnection(id);
+pc.onconnectionstatechange = () => {
+  console.log("CONNECTION STATE:", pc.connectionState);
+};
 
+pc.oniceconnectionstatechange = () => {
+  console.log("ICE STATE:", pc.iceConnectionState);
+};
       localStream?.getTracks().forEach((track) => {
         pc.addTrack(track, localStream);
       });
@@ -193,14 +199,9 @@ export default function App() {
         { urls: "stun:stun.l.google.com:19302" },
 
         {
-          urls: "turn:openrelay.metered.ca:80",
-          username: "openrelayproject",
-          credential: "openrelayproject",
-        },
-        {
-          urls: "turn:openrelay.metered.ca:443",
-          username: "openrelayproject",
-          credential: "openrelayproject",
+          urls: "turn:relay1.expressturn.com:3478",
+          username: "ef3ZK9K7T4",
+          credential: "9z3kfj29",
         },
       ],
     });
@@ -218,6 +219,8 @@ export default function App() {
 
     pc.ontrack = (e) => {
       const stream = e.streams[0];
+      console.log("TRACK RECEIVED", stream);
+
       // 🔥 ADD THIS BLOCK (audio playback fix)
       if (!remoteAudios[id]) {
         const audio = document.createElement("audio");
