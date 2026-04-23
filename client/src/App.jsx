@@ -4,10 +4,7 @@ import { io } from "socket.io-client";
 const socket = io("https://frenzio-backend.onrender.com");
 
 const peerConnections = {};
-const remoteAudios = {}; // 🔥 ADD THIS LINE
 let localStream;
-
-let audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
 export default function App() {
   const [name, setName] = useState("");
@@ -23,9 +20,6 @@ export default function App() {
 
   const [volumeLevel, setVolumeLevel] = useState(0);
 
-  // 🔥 NEW: GLOBAL ROOM LIST
-  const [roomList, setRoomList] = useState([]);
-
   const chatRef = useRef(null);
 
   function getColor(name = "") {
@@ -40,13 +34,10 @@ export default function App() {
 
   // 🎤 INIT
   useEffect(() => {
-    // 🎤 GET MICROPHONE
     navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
       localStream = stream;
 
-      const source = audioCtx.createMediaStreamSource(stream);
-      const panner = audioCtx.createStereoPanner();
-      const gain = audioCtx.createGain();
+      const ctx = new AudioContext();
       const analyser = ctx.createAnalyser();
       const mic = ctx.createMediaStreamSource(stream);
       mic.connect(analyser);
@@ -66,36 +57,14 @@ export default function App() {
       detect();
     });
 
-    // 💬 CHAT
     socket.on("message", (data) => {
       if (data.type === "public") {
         setMessages((p) => [...p, data]);
       }
     });
 
-    // 👥 USER LIST + 🔥 CONNECT TO ALL USERS
-    socket.on("userList", (userList) => {
-      setUsers(userList);
+    socket.on("userList", setUsers);
 
-      userList.forEach(async (u) => {
-        if (u.id === socket.id) return;
-
-        if (!peerConnections[u.id]) {
-          const pc = createPeerConnection(u.id);
-
-          localStream?.getAudioTracks().forEach((track) => {
-            pc.addTrack(track, localStream);
-          });
-
-          const offer = await pc.createOffer();
-          await pc.setLocalDescription(offer);
-
-          socket.emit("offer", { to: u.id, offer });
-        }
-      });
-    });
-
-    // 🎤 SPEAKING STATUS
     socket.on("speaking", ({ id, isSpeaking }) => {
       setSpeakingUsers((prev) => ({
         ...prev,
@@ -103,41 +72,31 @@ export default function App() {
       }));
     });
 
-    // 🌐 ROOMS
-    socket.on("roomList", (rooms) => {
-      setRoomList(rooms);
-    });
-
-    // 🔁 AUTO RECONNECT
+    // 🔁 AUTO RECONNECT (ADDED FIX)
     socket.io.on("reconnect", () => {
       socket.emit("join", { name, room });
     });
 
-    // 🎤 NEW USER JOINED
+    // 🎤 VOICE
     socket.on("user-joined", async (id) => {
-      if (id === socket.id) return;
+      const pc = createPeerConnection(id);
 
-      if (!peerConnections[id]) {
-        const pc = createPeerConnection(id);
+      localStream?.getTracks().forEach((track) => {
+        pc.addTrack(track, localStream);
+      });
 
-        localStream?.getAudioTracks().forEach((track) => {
-          pc.addTrack(track, localStream);
-        });
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
 
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
-
-        socket.emit("offer", { to: id, offer });
-      }
+      socket.emit("offer", { to: id, offer });
     });
 
-    // 📡 RECEIVE OFFER
     socket.on("offer", async ({ from, offer }) => {
       const pc = createPeerConnection(from);
 
       await pc.setRemoteDescription(offer);
 
-      localStream?.getAudioTracks().forEach((track) => {
+      localStream?.getTracks().forEach((track) => {
         pc.addTrack(track, localStream);
       });
 
@@ -147,37 +106,13 @@ export default function App() {
       socket.emit("answer", { to: from, answer });
     });
 
-    // 📡 RECEIVE ANSWER
     socket.on("answer", ({ from, answer }) => {
       peerConnections[from]?.setRemoteDescription(answer);
     });
 
-    // 📡 ICE
     socket.on("ice-candidate", ({ from, candidate }) => {
       peerConnections[from]?.addIceCandidate(candidate);
     });
-
-    // 🧹 CLEANUP ON DISCONNECT
-    socket.on("disconnect", () => {
-      Object.values(peerConnections).forEach((pc) => pc.close());
-      Object.values(remoteAudios).forEach((a) => a.remove());
-
-      for (let key in peerConnections) delete peerConnections[key];
-      for (let key in remoteAudios) delete remoteAudios[key];
-    });
-
-    // 🧹 CLEANUP ON RE-RENDER
-    return () => {
-      socket.off("message");
-      socket.off("userList");
-      socket.off("speaking");
-      socket.off("roomList");
-      socket.off("offer");
-      socket.off("answer");
-      socket.off("ice-candidate");
-      socket.off("user-joined");
-      socket.off("disconnect");
-    };
   }, [name, room]);
 
   // AUTO SCROLL
@@ -188,17 +123,6 @@ export default function App() {
   // ENTER
   const enter = () => {
     if (!name || !room) return alert("Enter name & room");
-
-    const source = audioCtx.createMediaStreamSource(stream);
-    ctx.resume();
-
-    // 🔥 ADD THIS BLOCK HERE
-    document.body.addEventListener("click", () => {
-      Object.values(remoteAudios).forEach((a) => {
-        a.play().catch(() => {});
-      });
-    });
-
     setEntered(true);
     socket.emit("join", { name, room });
   };
@@ -212,6 +136,7 @@ export default function App() {
     setMsg("");
   };
 
+  // MUTE
   function toggleMute() {
     if (!localStream) return;
 
@@ -236,9 +161,6 @@ export default function App() {
   }
 
   function leaveRoom() {
-    if (localStream) {
-      localStream.getTracks().forEach((track) => track.stop());
-    }
     window.location.reload();
   }
 
@@ -248,20 +170,7 @@ export default function App() {
 
   function createPeerConnection(id) {
     const pc = new RTCPeerConnection({
-      iceServers: [
-        { urls: "stun:stun.l.google.com:19302" },
-
-        {
-          urls: "turn:relay1.expressturn.com:3478",
-          username: "ef3ZK9K7T4",
-          credential: "9z3kfj29",
-        },
-        {
-          urls: "turn:relay1.expressturn.com:443",
-          username: "ef3ZK9K7T4",
-          credential: "9z3kfj29",
-        },
-      ],
+      iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
     });
 
     peerConnections[id] = pc;
@@ -277,35 +186,6 @@ export default function App() {
 
     pc.ontrack = (e) => {
       const stream = e.streams[0];
-      console.log("TRACK RECEIVED", stream);
-      console.log("Audio tracks:", stream.getAudioTracks());
-
-      // 🔥 ADD THIS BLOCK (audio playback fix)
-      if (!remoteAudios[id]) {
-        const audio = document.createElement("audio");
-        audio.srcObject = stream;
-        audio.autoplay = true;
-        audio.playsInline = true;
-        audio.controls = false;
-
-        document.body.appendChild(audio);
-
-        audio.onloadedmetadata = () => {
-          audio.muted = false;
-          audio.volume = 1;
-
-          audio
-            .play()
-            .then(() => {
-              console.log("Audio playing ✅");
-            })
-            .catch((err) => {
-              console.log("Play blocked ❌", err);
-            });
-        };
-
-        remoteAudios[id] = audio;
-      }
 
       const ctx = new AudioContext();
       const source = ctx.createMediaStreamSource(stream);
@@ -333,44 +213,14 @@ export default function App() {
   const getAvatar = (name) =>
     `https://api.dicebear.com/7.x/initials/svg?seed=${name}`;
 
-  // 🔥 LOGIN SCREEN WITH ROOMS
   if (!entered) {
     return (
       <div className="login">
         <div className="card">
           <h1>Free Frenzio</h1>
-
           <input placeholder="Name" onChange={(e) => setName(e.target.value)} />
-
-          <input
-            placeholder="Room"
-            value={room}
-            onChange={(e) => setRoom(e.target.value)}
-          />
-
+          <input placeholder="Room" onChange={(e) => setRoom(e.target.value)} />
           <button onClick={enter}>Enter</button>
-
-          {/* 🔥 GLOBAL ROOM LIST UI */}
-          <div style={{ marginTop: 20 }}>
-            <h3>Live Rooms</h3>
-
-            {roomList.length === 0 && <p>No active rooms</p>}
-
-            {roomList.map((r, i) => (
-              <div
-                key={i}
-                onClick={() => setRoom(r)}
-                style={{
-                  padding: "8px",
-                  background: "#222",
-                  margin: "5px 0",
-                  cursor: "pointer",
-                }}
-              >
-                {r}
-              </div>
-            ))}
-          </div>
         </div>
       </div>
     );
