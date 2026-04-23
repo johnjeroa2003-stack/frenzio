@@ -133,8 +133,15 @@ export default function App() {
   const enter = () => {
     if (!name || !room) return alert("Enter name & room");
 
-    const ctx = new AudioContext(); // 🔥 ADD
-    ctx.resume(); // 🔥 ADD
+    const ctx = new AudioContext();
+    ctx.resume();
+
+    // 🔥 ADD THIS BLOCK HERE
+    document.body.addEventListener("click", () => {
+      Object.values(remoteAudios).forEach((a) => {
+        a.play().catch(() => {});
+      });
+    });
 
     setEntered(true);
     socket.emit("join", { name, room });
@@ -217,11 +224,18 @@ export default function App() {
         audio.srcObject = stream;
         audio.autoplay = true;
         audio.playsInline = true;
+        audio.muted = false; // 🔥 ADD THIS
 
-        audio.onloadedmetadata = () => {
+        // 🔥 ADD THIS (attach to DOM so browser allows audio)
+        document.body.appendChild(audio);
+
+        // 🔥 STRONG PLAY FIX
+        const playAudio = () => {
           audio.play().catch(() => {});
         };
 
+        audio.onloadedmetadata = playAudio;
+        setTimeout(playAudio, 500);
         remoteAudios[id] = audio;
       }
 
