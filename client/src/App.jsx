@@ -7,6 +7,8 @@ const peerConnections = {};
 const remoteAudios = {}; // 🔥 ADD THIS LINE
 let localStream;
 
+let audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
 export default function App() {
   const [name, setName] = useState("");
   const [room, setRoom] = useState("");
@@ -42,7 +44,9 @@ export default function App() {
     navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
       localStream = stream;
 
-      const ctx = new AudioContext();
+      const source = audioCtx.createMediaStreamSource(stream);
+      const panner = audioCtx.createStereoPanner();
+      const gain = audioCtx.createGain();
       const analyser = ctx.createAnalyser();
       const mic = ctx.createMediaStreamSource(stream);
       mic.connect(analyser);
@@ -185,7 +189,7 @@ export default function App() {
   const enter = () => {
     if (!name || !room) return alert("Enter name & room");
 
-    const ctx = new AudioContext();
+    const source = audioCtx.createMediaStreamSource(stream);
     ctx.resume();
 
     // 🔥 ADD THIS BLOCK HERE
@@ -252,6 +256,11 @@ export default function App() {
           username: "ef3ZK9K7T4",
           credential: "9z3kfj29",
         },
+        {
+          urls: "turn:relay1.expressturn.com:443",
+          username: "ef3ZK9K7T4",
+          credential: "9z3kfj29",
+        },
       ],
     });
 
@@ -269,6 +278,7 @@ export default function App() {
     pc.ontrack = (e) => {
       const stream = e.streams[0];
       console.log("TRACK RECEIVED", stream);
+      console.log("Audio tracks:", stream.getAudioTracks());
 
       // 🔥 ADD THIS BLOCK (audio playback fix)
       if (!remoteAudios[id]) {
@@ -281,7 +291,17 @@ export default function App() {
         document.body.appendChild(audio);
 
         audio.onloadedmetadata = () => {
-          audio.play().catch(() => {});
+          audio.muted = false;
+          audio.volume = 1;
+
+          audio
+            .play()
+            .then(() => {
+              console.log("Audio playing ✅");
+            })
+            .catch((err) => {
+              console.log("Play blocked ❌", err);
+            });
         };
 
         remoteAudios[id] = audio;
