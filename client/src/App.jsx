@@ -89,17 +89,13 @@ export default function App() {
     // 🎤 VOICE
     socket.on("user-joined", async (id) => {
       const pc = createPeerConnection(id);
-pc.onconnectionstatechange = () => {
-  pc.oniceconnectionstatechange = () => {
-    console.log("ICE STATE:", pc.iceConnectionState);
-  };
-
-  pc.onconnectionstatechange = () => {
-    console.log("CONNECTION:", pc.connectionState);
-  };
-  console.log("CONNECTION STATE:", pc.connectionState);
+pc.oniceconnectionstatechange = () => {
+  console.log("ICE STATE:", pc.iceConnectionState);
 };
 
+pc.onconnectionstatechange = () => {
+  console.log("CONNECTION:", pc.connectionState);
+};
 pc.oniceconnectionstatechange = () => {
   console.log("ICE STATE:", pc.iceConnectionState);
 };
@@ -118,10 +114,9 @@ pc.oniceconnectionstatechange = () => {
 
       await pc.setRemoteDescription(offer);
 
-      localStream?.getTracks().forEach((track) => {
+      localStream?.getAudioTracks().forEach((track) => {
         pc.addTrack(track, localStream);
       });
-
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
 
