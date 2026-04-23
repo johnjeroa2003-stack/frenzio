@@ -4,6 +4,7 @@ import { io } from "socket.io-client";
 const socket = io("https://frenzio-backend.onrender.com");
 
 const peerConnections = {};
+const remoteAudios = {}; // 🔥 ADD THIS LINE
 let localStream;
 
 export default function App() {
@@ -193,6 +194,19 @@ export default function App() {
 
     pc.ontrack = (e) => {
       const stream = e.streams[0];
+      // 🔥 ADD THIS BLOCK (audio playback fix)
+      if (!remoteAudios[id]) {
+        const audio = document.createElement("audio");
+        audio.srcObject = stream;
+        audio.autoplay = true;
+        audio.playsInline = true;
+
+        audio.play().catch(() => {
+          console.log("Autoplay blocked");
+        });
+
+        remoteAudios[id] = audio;
+      }
 
       const ctx = new AudioContext();
       const source = ctx.createMediaStreamSource(stream);
@@ -212,7 +226,7 @@ export default function App() {
       source.connect(panner);
       panner.connect(gain);
       gain.connect(ctx.destination);
-    };
+    };;
 
     return pc;
   }
