@@ -11,14 +11,26 @@ app.use(express.static(path.join(__dirname, "../public")));
 
 const users = new Map(); // socket.id -> { name, room }
 
+// 🔥 NEW: STORE ROOMS
+const rooms = new Set();
+
 io.on("connection", (socket) => {
+  // 🔥 SEND ROOM LIST WHEN USER CONNECTS
+  socket.emit("roomList", Array.from(rooms));
+
   socket.on("join", ({ name, room }) => {
     users.set(socket.id, { name, room });
+
+    // 🔥 ADD ROOM
+    rooms.add(room);
 
     socket.join(room);
 
     io.to(room).emit("userList", getUsers(room));
     socket.to(room).emit("user-joined", socket.id);
+
+    // 🔥 SEND UPDATED ROOM LIST TO ALL
+    io.emit("roomList", Array.from(rooms));
   });
 
   socket.on("sendMessage", (msg) => {
@@ -67,9 +79,20 @@ io.on("connection", (socket) => {
 
   socket.on("disconnect", () => {
     const user = users.get(socket.id);
+
     if (user) {
       io.to(user.room).emit("userList", getUsers(user.room));
+
+      // 🔥 REMOVE ROOM IF EMPTY
+      const remainingUsers = getUsers(user.room);
+      if (remainingUsers.length === 0) {
+        rooms.delete(user.room);
+      }
+
+      // 🔥 UPDATE ROOM LIST
+      io.emit("roomList", Array.from(rooms));
     }
+
     users.delete(socket.id);
   });
 });
