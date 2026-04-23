@@ -5,25 +5,30 @@ const socket = io("https://frenzio-backend.onrender.com");
 
 const peerConnections = {};
 let localStream;
+const GIPHY_KEY = "abc123xyz456";
 
+const GIPHY_KEY = "abc123XYZ456pqrst";
 export default function App() {
   const [name, setName] = useState("");
   const [room, setRoom] = useState("");
   const [entered, setEntered] = useState(false);
 
   const [users, setUsers] = useState([]);
-  const [messages, setMessages] = useState([]);
+
+  // 🔥 LOAD CHAT HISTORY (LOCAL)
+  const [messages, setMessages] = useState(() => {
+    const saved = localStorage.getItem("chat");
+    return saved ? JSON.parse(saved) : [];
+  });
+
   const [msg, setMsg] = useState("");
 
   const [speakingUsers, setSpeakingUsers] = useState({});
   const [isMuted, setIsMuted] = useState(false);
   const [volumeLevel, setVolumeLevel] = useState(0);
 
-  // 🔥 ADDED STATES (PRO FEATURES)
-  const [typing, setTyping] = useState(false);
+  // 🔥 EXTRA FEATURES
   const [typingUser, setTypingUser] = useState("");
-  const [onlineStatus, setOnlineStatus] = useState({});
-
   const [showEmoji, setShowEmoji] = useState(false);
   const [showGif, setShowGif] = useState(false);
   const [gifResults, setGifResults] = useState([]);
@@ -31,14 +36,6 @@ export default function App() {
 
   const chatRef = useRef(null);
 
-  function getColor(name = "") {
-    const colors = ["#00ff9d", "#00c3ff", "#ff7bff", "#ffd166", "#ff4d6d"];
-    let sum = 0;
-    for (let i = 0; i < name.length; i++) sum += name.charCodeAt(i);
-    return colors[sum % colors.length];
-  }
-
-  const hostId = users[0]?.id;
   const speakingCount = Object.values(speakingUsers).filter(Boolean).length;
 
   // 🎤 INIT
@@ -66,9 +63,19 @@ export default function App() {
       detect();
     });
 
+    // 💬 CHAT
     socket.on("message", (data) => {
       if (data.type === "public") {
-        setMessages((p) => [...p, data]);
+        const newMsg = {
+          ...data,
+          time: new Date().toLocaleTimeString(),
+        };
+
+        setMessages((p) => {
+          const updated = [...p, newMsg];
+          localStorage.setItem("chat", JSON.stringify(updated));
+          return updated;
+        });
       }
     });
 
@@ -81,17 +88,8 @@ export default function App() {
       }));
     });
 
-    // 🔥 RECEIVE TYPING
     socket.on("typing", ({ user, isTyping }) => {
       setTypingUser(isTyping ? user : "");
-    });
-
-    // 🔥 ONLINE STATUS
-    socket.on("status", ({ id, online }) => {
-      setOnlineStatus((prev) => ({
-        ...prev,
-        [id]: online,
-      }));
     });
 
     socket.io.on("reconnect", () => {
@@ -156,10 +154,33 @@ export default function App() {
     const text = custom || msg;
     if (!text.trim()) return;
 
+    const newMsg = {
+      user: "Me",
+      text,
+      time: new Date().toLocaleTimeString(),
+    };
+
     socket.emit("sendMessage", text);
-    setMessages((p) => [...p, { user: "Me", text }]);
+
+    setMessages((p) => {
+      const updated = [...p, newMsg];
+      localStorage.setItem("chat", JSON.stringify(updated));
+      return updated;
+    });
+
     setMsg("");
   };
+
+  // TYPING
+  function handleTyping(e) {
+    setMsg(e.target.value);
+
+    socket.emit("typing", { user: name, isTyping: true });
+
+    setTimeout(() => {
+      socket.emit("typing", { user: name, isTyping: false });
+    }, 1000);
+  }
 
   // EMOJI
   function addEmoji(e) {
@@ -171,7 +192,7 @@ export default function App() {
     if (!gifSearch) return;
 
     const res = await fetch(
-      `https://api.giphy.com/v1/gifs/search?api_key=YOUR_GIPHY_API_KEY&q=${gifSearch}&limit=12`,
+      `https://api.giphy.com/v1/gifs/search?api_key=${GIPHY_KEY}&q=${gifSearch}&limit=12`,
     );
 
     const data = await res.json();
@@ -195,6 +216,7 @@ export default function App() {
   }
 
   function leaveRoom() {
+    localStorage.removeItem("chat"); // optional
     window.location.reload();
   }
 
@@ -216,16 +238,15 @@ export default function App() {
 
     pc.ontrack = (e) => {
       const stream = e.streams[0];
-      const ctx = new AudioContext();
-      const source = ctx.createMediaStreamSource(stream);
-      source.connect(ctx.destination);
+
+      const audio = document.createElement("audio");
+      audio.srcObject = stream;
+      audio.autoplay = true;
+      document.body.appendChild(audio);
     };
 
     return pc;
   }
-
-  const getAvatar = (name) =>
-    `https://api.dicebear.com/7.x/initials/svg?seed=${name}`;
 
   if (!entered) {
     return (
@@ -243,51 +264,19 @@ export default function App() {
   return (
     <div className="appContainer">
       <div className="voiceSection">
-        <div className="topBar">
-          <div className="logo">
-            Free <span>Frenzio</span>
-          </div>
-          <div className="badges">
-            <span>🟢 {room}</span>
-            <span>👥 {users.length}</span>
-          </div>
-        </div>
+        <p>{room}</p>
+        <p>{users.length} users</p>
+        <p>{speakingCount} speaking</p>
 
-        <div className="circleArea">
-          <div
-            className="centerPulse"
-            style={{ transform: `scale(${1 + volumeLevel / 200})` }}
-          >
-            <p>{speakingCount} speaking</p>
-          </div>
-        </div>
-
-        <div className="controls">
-          <button onClick={toggleMute}>{isMuted ? "Unmute" : "Mute"}</button>
-          <button onClick={leaveRoom}>Leave</button>
-        </div>
+        <button onClick={toggleMute}>{isMuted ? "Unmute" : "Mute"}</button>
+        <button onClick={leaveRoom}>Leave</button>
       </div>
 
       <div className="chatSection">
-        <div className="chatMessages" ref={chatRef}>
+        <div ref={chatRef}>
           {messages.map((m, i) => (
-            <div
-              key={i}
-              style={{
-                background: m.user === "Me" ? "#005c4b" : "#222",
-                padding: 8,
-                borderRadius: 10,
-                margin: 5,
-                maxWidth: "70%",
-              }}
-            >
-              <b>{m.user}</b>
-
-              {/* 🕒 TIME */}
-              {m.time && (
-                <small style={{ fontSize: 10, opacity: 0.6 }}>{m.time}</small>
-              )}
-
+            <div key={i}>
+              <b>{m.user}</b> <small>{m.time}</small>
               {m.text.startsWith("GIF:") ? (
                 <img src={m.text.replace("GIF:", "")} width={150} />
               ) : m.text.startsWith("http") ? (
@@ -301,46 +290,28 @@ export default function App() {
           ))}
         </div>
 
-        {/* 🔥 REAL TYPING */}
-        {typingUser && (
-          <p style={{ fontSize: 12 }}>{typingUser} is typing...</p>
-        )}
+        {typingUser && <p>{typingUser} is typing...</p>}
 
-        <div className="chatInput">
-          <input
-            value={msg}
-            onChange={(e) => {
-              setMsg(e.target.value);
+        <input
+          value={msg}
+          onChange={handleTyping}
+          onKeyDown={(e) => e.key === "Enter" && send()}
+        />
 
-              socket.emit("typing", true);
-              setTimeout(() => {
-                socket.emit("typing", false);
-              }, 1000);
-            }}
-            onKeyDown={(e) => e.key === "Enter" && send()}
-          />
+        <button onClick={() => send()}>Send</button>
+        <button onClick={() => setShowEmoji(!showEmoji)}>😊</button>
+        <button onClick={() => setShowGif(!showGif)}>GIF</button>
 
-          <button onClick={() => send()}>Send</button>
-          <button onClick={() => setShowEmoji(!showEmoji)}>😊</button>
-          <button onClick={() => setShowGif(!showGif)}>GIF</button>
-        </div>
-
-        {showEmoji && (
-          <div>
-            {["😀", "😂", "😍", "🔥", "👍", "😎", "😭"].map((e, i) => (
-              <span key={i} onClick={() => addEmoji(e)}>
-                {e}
-              </span>
-            ))}
-          </div>
-        )}
+        {showEmoji &&
+          ["😀", "😂", "😍", "🔥", "👍"].map((e, i) => (
+            <span key={i} onClick={() => addEmoji(e)}>
+              {e}
+            </span>
+          ))}
 
         {showGif && (
           <div>
-            <input
-              value={gifSearch}
-              onChange={(e) => setGifSearch(e.target.value)}
-            />
+            <input onChange={(e) => setGifSearch(e.target.value)} />
             <button onClick={searchGif}>Search</button>
 
             {gifResults.map((g) => (
