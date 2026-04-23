@@ -67,7 +67,27 @@ export default function App() {
       }
     });
 
-    socket.on("userList", setUsers);
+    socket.on("userList", (userList) => {
+      setUsers(userList);
+
+      // 🔥 NEW: connect to existing users
+      userList.forEach(async (u) => {
+        if (u.id === socket.id) return;
+
+        if (!peerConnections[u.id]) {
+          const pc = createPeerConnection(u.id);
+
+          localStream?.getAudioTracks().forEach((track) => {
+            pc.addTrack(track, localStream);
+          });
+
+          const offer = await pc.createOffer();
+          await pc.setLocalDescription(offer);
+
+          socket.emit("offer", { to: u.id, offer });
+        }
+      });
+    });
 
     socket.on("speaking", ({ id, isSpeaking }) => {
       setSpeakingUsers((prev) => ({
