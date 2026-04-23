@@ -132,6 +132,10 @@ export default function App() {
   // ENTER
   const enter = () => {
     if (!name || !room) return alert("Enter name & room");
+
+    const ctx = new AudioContext(); // 🔥 ADD
+    ctx.resume(); // 🔥 ADD
+
     setEntered(true);
     socket.emit("join", { name, room });
   };
@@ -178,7 +182,20 @@ export default function App() {
 
   function createPeerConnection(id) {
     const pc = new RTCPeerConnection({
-      iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+      iceServers: [
+        { urls: "stun:stun.l.google.com:19302" },
+
+        {
+          urls: "turn:openrelay.metered.ca:80",
+          username: "openrelayproject",
+          credential: "openrelayproject",
+        },
+        {
+          urls: "turn:openrelay.metered.ca:443",
+          username: "openrelayproject",
+          credential: "openrelayproject",
+        },
+      ],
     });
 
     peerConnections[id] = pc;
@@ -201,9 +218,9 @@ export default function App() {
         audio.autoplay = true;
         audio.playsInline = true;
 
-        audio.play().catch(() => {
-          console.log("Autoplay blocked");
-        });
+        audio.onloadedmetadata = () => {
+          audio.play().catch(() => {});
+        };
 
         remoteAudios[id] = audio;
       }
@@ -226,7 +243,7 @@ export default function App() {
       source.connect(panner);
       panner.connect(gain);
       gain.connect(ctx.destination);
-    };;
+    };
 
     return pc;
   }
