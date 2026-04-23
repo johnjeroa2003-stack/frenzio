@@ -17,8 +17,12 @@ export default function App() {
 
   const [speakingUsers, setSpeakingUsers] = useState({});
   const [isMuted, setIsMuted] = useState(false);
-
   const [volumeLevel, setVolumeLevel] = useState(0);
+
+  // ✅ NEW FEATURES
+  const [typingUser, setTypingUser] = useState("");
+  const [showEmoji, setShowEmoji] = useState(false);
+  const [editingIndex, setEditingIndex] = useState(null);
 
   const chatRef = useRef(null);
 
@@ -57,9 +61,24 @@ export default function App() {
       detect();
     });
 
+    // 💬 MESSAGE RECEIVE (ENHANCED)
     socket.on("message", (data) => {
       if (data.type === "public") {
-        setMessages((p) => [...p, data]);
+        const newMsg = {
+          ...data,
+          time: new Date().toLocaleTimeString(),
+        };
+
+        setMessages((p) => {
+          const updated = [...p, newMsg];
+          localStorage.setItem("chat", JSON.stringify(updated));
+          return updated;
+        });
+
+        // 🔔 sound
+        new Audio(
+          "https://www.soundjay.com/buttons/sounds/button-3.mp3",
+        ).play();
       }
     });
 
@@ -72,7 +91,11 @@ export default function App() {
       }));
     });
 
-    // 🔁 AUTO RECONNECT (ADDED FIX)
+    // ✅ TYPING
+    socket.on("typing", ({ user, isTyping }) => {
+      setTypingUser(isTyping ? user : "");
+    });
+
     socket.io.on("reconnect", () => {
       socket.emit("join", { name, room });
     });
@@ -115,6 +138,12 @@ export default function App() {
     });
   }, [name, room]);
 
+  // 💾 LOAD SAVED CHAT
+  useEffect(() => {
+    const saved = localStorage.getItem("chat");
+    if (saved) setMessages(JSON.parse(saved));
+  }, []);
+
   // AUTO SCROLL
   useEffect(() => {
     chatRef.current?.scrollTo(0, chatRef.current.scrollHeight);
@@ -127,14 +156,45 @@ export default function App() {
     socket.emit("join", { name, room });
   };
 
-  // SEND
+  // SEND (EDIT SUPPORT)
   const send = () => {
     if (!msg.trim()) return;
 
-    socket.emit("sendMessage", msg);
-    setMessages((p) => [...p, { user: "Me", text: msg }]);
+    if (editingIndex !== null) {
+      const updated = [...messages];
+      updated[editingIndex].text = msg;
+      setMessages(updated);
+      localStorage.setItem("chat", JSON.stringify(updated));
+      setEditingIndex(null);
+    } else {
+      socket.emit("sendMessage", msg);
+
+      const newMsg = {
+        user: "Me",
+        text: msg,
+        time: new Date().toLocaleTimeString(),
+      };
+
+      setMessages((p) => {
+        const updated = [...p, newMsg];
+        localStorage.setItem("chat", JSON.stringify(updated));
+        return updated;
+      });
+    }
+
     setMsg("");
   };
+
+  // TYPING
+  function handleTyping(e) {
+    setMsg(e.target.value);
+
+    socket.emit("typing", { user: name, isTyping: true });
+
+    setTimeout(() => {
+      socket.emit("typing", { user: name, isTyping: false });
+    }, 1000);
+  }
 
   // MUTE
   function toggleMute() {
@@ -148,12 +208,8 @@ export default function App() {
   }
 
   function invite() {
-    try {
-      navigator.clipboard.writeText(window.location.href);
-      alert("Invite link copied!");
-    } catch {
-      prompt("Copy link:", window.location.href);
-    }
+    navigator.clipboard.writeText(window.location.href);
+    alert("Invite link copied!");
   }
 
   function showPeople() {
@@ -187,31 +243,14 @@ export default function App() {
     pc.ontrack = (e) => {
       const stream = e.streams[0];
 
-      const ctx = new AudioContext();
-      const source = ctx.createMediaStreamSource(stream);
-
-      const panner = ctx.createStereoPanner();
-      const gain = ctx.createGain();
-
-      const userIndex = users.findIndex((u) => u.id === id);
-      const total = users.length > 1 ? users.length : 2;
-
-      let pan = (userIndex / (total - 1)) * 2 - 1;
-      panner.pan.value = pan;
-
-      const distanceFromCenter = Math.abs(userIndex - total / 2);
-      gain.gain.value = 1 - distanceFromCenter / total;
-
-      source.connect(panner);
-      panner.connect(gain);
-      gain.connect(ctx.destination);
+      const audio = document.createElement("audio");
+      audio.srcObject = stream;
+      audio.autoplay = true;
+      document.body.appendChild(audio);
     };
 
     return pc;
   }
-
-  const getAvatar = (name) =>
-    `https://api.dicebear.com/7.x/initials/svg?seed=${name}`;
 
   if (!entered) {
     return (
@@ -228,6 +267,7 @@ export default function App() {
 
   return (
     <div className="appContainer">
+      {/* VOICE UI */}
       <div className="voiceSection">
         <div className="topBar">
           <div className="logo">
@@ -244,58 +284,20 @@ export default function App() {
             className="centerPulse"
             style={{ transform: `scale(${1 + volumeLevel / 200})` }}
           >
-            <div
-              className="wave"
-              style={{ boxShadow: `0 0 ${20 + volumeLevel}px #00ff9d` }}
-            ></div>
             <p>{speakingCount} speaking</p>
           </div>
-
-          {users.map((u, i) => {
-            const angle = i * (360 / users.length);
-            const color = getColor(u.name);
-            const isHost = u.id === hostId;
-
-            return (
-              <div
-                key={u.id}
-                className={`userBubble ${speakingUsers[u.id] ? "active" : ""}`}
-                style={{
-                  transform: `rotate(${angle}deg) translate(230px) rotate(-${angle}deg)`,
-                }}
-              >
-                <div className="avatarWrap" style={{ "--glow": color }}>
-                  <img src={getAvatar(u.name)} />
-                  {isHost && <span className="hostBadge">★</span>}
-                  <span className="mic">{isMuted ? "🔇" : "🎤"}</span>
-                  <span className="ring r1"></span>
-                  <span className="ring r2"></span>
-                </div>
-                <p className="username">{u.name}</p>
-              </div>
-            );
-          })}
         </div>
 
         <div className="controls">
-          <button className="btn" onClick={invite}>
-            Invite
-          </button>
-          <button className="btn" onClick={showPeople}>
-            People
-          </button>
-          <button className="muteBtn" onClick={toggleMute}>
-            {isMuted ? "Unmute" : "Mute"}
-          </button>
-          <button className="btn leave" onClick={leaveRoom}>
-            Leave
-          </button>
-          <button className="btn" onClick={openSettings}>
-            ⚙
-          </button>
+          <button onClick={invite}>Invite</button>
+          <button onClick={showPeople}>People</button>
+          <button onClick={toggleMute}>{isMuted ? "Unmute" : "Mute"}</button>
+          <button onClick={leaveRoom}>Leave</button>
+          <button onClick={openSettings}>⚙</button>
         </div>
       </div>
 
+      {/* CHAT */}
       <div className="chatSection">
         <div className="chatHeader">
           💬 Chat <span>{users.length} online</span>
@@ -305,20 +307,61 @@ export default function App() {
           {messages.map((m, i) => (
             <div key={i} className="chatMsg">
               <b>{m.user}</b>
+              <small style={{ marginLeft: 10 }}>{m.time}</small>
+
               <p>{m.text}</p>
+
+              {m.user === "Me" && (
+                <div>
+                  <button
+                    onClick={() => {
+                      setMsg(m.text);
+                      setEditingIndex(i);
+                    }}
+                  >
+                    ✏️
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      const updated = messages.filter(
+                        (_, index) => index !== i,
+                      );
+                      setMessages(updated);
+                      localStorage.setItem("chat", JSON.stringify(updated));
+                    }}
+                  >
+                    🗑️
+                  </button>
+                </div>
+              )}
             </div>
           ))}
         </div>
 
+        {typingUser && <p>{typingUser} is typing...</p>}
+
         <div className="chatInput">
+          <button onClick={() => setShowEmoji(!showEmoji)}>😊</button>
+
           <input
             value={msg}
-            onChange={(e) => setMsg(e.target.value)}
+            onChange={handleTyping}
             onKeyDown={(e) => e.key === "Enter" && send()}
-            placeholder="Type message..."
           />
+
           <button onClick={send}>Send</button>
         </div>
+
+        {showEmoji && (
+          <div>
+            {["😀", "😂", "😍", "🔥", "👍"].map((e, i) => (
+              <span key={i} onClick={() => setMsg((prev) => prev + e)}>
+                {e}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
