@@ -20,6 +20,9 @@ export default function App() {
 
   const [volumeLevel, setVolumeLevel] = useState(0);
 
+  // 🔥 NEW: GLOBAL ROOM LIST
+  const [roomList, setRoomList] = useState([]);
+
   const chatRef = useRef(null);
 
   function getColor(name = "") {
@@ -72,7 +75,12 @@ export default function App() {
       }));
     });
 
-    // 🔁 AUTO RECONNECT (ADDED FIX)
+    // 🔥 NEW: LISTEN GLOBAL ROOMS
+    socket.on("roomList", (rooms) => {
+      setRoomList(rooms);
+    });
+
+    // 🔁 AUTO RECONNECT
     socket.io.on("reconnect", () => {
       socket.emit("join", { name, room });
     });
@@ -136,7 +144,6 @@ export default function App() {
     setMsg("");
   };
 
-  // MUTE
   function toggleMute() {
     if (!localStream) return;
 
@@ -213,14 +220,44 @@ export default function App() {
   const getAvatar = (name) =>
     `https://api.dicebear.com/7.x/initials/svg?seed=${name}`;
 
+  // 🔥 LOGIN SCREEN WITH ROOMS
   if (!entered) {
     return (
       <div className="login">
         <div className="card">
           <h1>Free Frenzio</h1>
+
           <input placeholder="Name" onChange={(e) => setName(e.target.value)} />
-          <input placeholder="Room" onChange={(e) => setRoom(e.target.value)} />
+
+          <input
+            placeholder="Room"
+            value={room}
+            onChange={(e) => setRoom(e.target.value)}
+          />
+
           <button onClick={enter}>Enter</button>
+
+          {/* 🔥 GLOBAL ROOM LIST UI */}
+          <div style={{ marginTop: 20 }}>
+            <h3>Live Rooms</h3>
+
+            {roomList.length === 0 && <p>No active rooms</p>}
+
+            {roomList.map((r, i) => (
+              <div
+                key={i}
+                onClick={() => setRoom(r)}
+                style={{
+                  padding: "8px",
+                  background: "#222",
+                  margin: "5px 0",
+                  cursor: "pointer",
+                }}
+              >
+                {r}
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     );
