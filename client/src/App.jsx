@@ -19,7 +19,12 @@ export default function App() {
   const [isMuted, setIsMuted] = useState(false);
   const [volumeLevel, setVolumeLevel] = useState(0);
 
-  // 🔥 NEW (GIF)
+  // 🔥 ADDED STATES (PRO FEATURES)
+  const [typing, setTyping] = useState(false);
+  const [typingUser, setTypingUser] = useState("");
+  const [onlineStatus, setOnlineStatus] = useState({});
+
+  const [showEmoji, setShowEmoji] = useState(false);
   const [showGif, setShowGif] = useState(false);
   const [gifResults, setGifResults] = useState([]);
   const [gifSearch, setGifSearch] = useState("");
@@ -73,6 +78,19 @@ export default function App() {
       setSpeakingUsers((prev) => ({
         ...prev,
         [id]: isSpeaking,
+      }));
+    });
+
+    // 🔥 RECEIVE TYPING
+    socket.on("typing", ({ user, isTyping }) => {
+      setTypingUser(isTyping ? user : "");
+    });
+
+    // 🔥 ONLINE STATUS
+    socket.on("status", ({ id, online }) => {
+      setOnlineStatus((prev) => ({
+        ...prev,
+        [id]: online,
       }));
     });
 
@@ -133,9 +151,9 @@ export default function App() {
     socket.emit("join", { name, room });
   };
 
-  // SEND (UPDATED)
-  const send = (customMsg = null) => {
-    const text = customMsg || msg;
+  // SEND
+  const send = (custom = null) => {
+    const text = custom || msg;
     if (!text.trim()) return;
 
     socket.emit("sendMessage", text);
@@ -143,13 +161,12 @@ export default function App() {
     setMsg("");
   };
 
-  // 🔥 SEND GIF
-  function sendGif(url) {
-    send(`GIF:${url}`);
-    setShowGif(false);
+  // EMOJI
+  function addEmoji(e) {
+    setMsg((prev) => prev + e);
   }
 
-  // 🔥 SEARCH GIF
+  // GIF SEARCH
   async function searchGif() {
     if (!gifSearch) return;
 
@@ -161,6 +178,12 @@ export default function App() {
     setGifResults(data.data);
   }
 
+  function sendGif(url) {
+    send(`GIF:${url}`);
+    setShowGif(false);
+  }
+
+  // MUTE
   function toggleMute() {
     if (!localStream) return;
 
@@ -193,7 +216,6 @@ export default function App() {
 
     pc.ontrack = (e) => {
       const stream = e.streams[0];
-
       const ctx = new AudioContext();
       const source = ctx.createMediaStreamSource(stream);
       source.connect(ctx.destination);
@@ -238,28 +260,6 @@ export default function App() {
           >
             <p>{speakingCount} speaking</p>
           </div>
-
-          {users.map((u, i) => {
-            const angle = i * (360 / users.length);
-            const color = getColor(u.name);
-            const isHost = u.id === hostId;
-
-            return (
-              <div
-                key={u.id}
-                className={`userBubble ${speakingUsers[u.id] ? "active" : ""}`}
-                style={{
-                  transform: `rotate(${angle}deg) translate(230px) rotate(-${angle}deg)`,
-                }}
-              >
-                <div className="avatarWrap" style={{ "--glow": color }}>
-                  <img src={getAvatar(u.name)} />
-                  {isHost && <span className="hostBadge">★</span>}
-                </div>
-                <p className="username">{u.name}</p>
-              </div>
-            );
-          })}
         </div>
 
         <div className="controls">
@@ -271,11 +271,29 @@ export default function App() {
       <div className="chatSection">
         <div className="chatMessages" ref={chatRef}>
           {messages.map((m, i) => (
-            <div key={i}>
+            <div
+              key={i}
+              style={{
+                background: m.user === "Me" ? "#005c4b" : "#222",
+                padding: 8,
+                borderRadius: 10,
+                margin: 5,
+                maxWidth: "70%",
+              }}
+            >
               <b>{m.user}</b>
 
+              {/* 🕒 TIME */}
+              {m.time && (
+                <small style={{ fontSize: 10, opacity: 0.6 }}>{m.time}</small>
+              )}
+
               {m.text.startsWith("GIF:") ? (
-                <img src={m.text.replace("GIF:", "")} style={{ width: 150 }} />
+                <img src={m.text.replace("GIF:", "")} width={150} />
+              ) : m.text.startsWith("http") ? (
+                <a href={m.text} target="_blank">
+                  {m.text}
+                </a>
               ) : (
                 <p>{m.text}</p>
               )}
@@ -283,35 +301,56 @@ export default function App() {
           ))}
         </div>
 
+        {/* 🔥 REAL TYPING */}
+        {typingUser && (
+          <p style={{ fontSize: 12 }}>{typingUser} is typing...</p>
+        )}
+
         <div className="chatInput">
           <input
             value={msg}
-            onChange={(e) => setMsg(e.target.value)}
+            onChange={(e) => {
+              setMsg(e.target.value);
+
+              socket.emit("typing", true);
+              setTimeout(() => {
+                socket.emit("typing", false);
+              }, 1000);
+            }}
             onKeyDown={(e) => e.key === "Enter" && send()}
           />
+
           <button onClick={() => send()}>Send</button>
+          <button onClick={() => setShowEmoji(!showEmoji)}>😊</button>
           <button onClick={() => setShowGif(!showGif)}>GIF</button>
         </div>
+
+        {showEmoji && (
+          <div>
+            {["😀", "😂", "😍", "🔥", "👍", "😎", "😭"].map((e, i) => (
+              <span key={i} onClick={() => addEmoji(e)}>
+                {e}
+              </span>
+            ))}
+          </div>
+        )}
 
         {showGif && (
           <div>
             <input
               value={gifSearch}
               onChange={(e) => setGifSearch(e.target.value)}
-              placeholder="Search GIF"
             />
             <button onClick={searchGif}>Search</button>
 
-            <div>
-              {gifResults.map((g) => (
-                <img
-                  key={g.id}
-                  src={g.images.fixed_height.url}
-                  width={100}
-                  onClick={() => sendGif(g.images.fixed_height.url)}
-                />
-              ))}
-            </div>
+            {gifResults.map((g) => (
+              <img
+                key={g.id}
+                src={g.images.fixed_height.url}
+                width={100}
+                onClick={() => sendGif(g.images.fixed_height.url)}
+              />
+            ))}
           </div>
         )}
       </div>
