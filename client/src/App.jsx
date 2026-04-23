@@ -5,9 +5,10 @@ const socket = io("https://frenzio-backend.onrender.com");
 
 const peerConnections = {};
 let localStream;
-const GIPHY_KEY = "abc123xyz456";
 
-const GIPHY_KEY = "abc123XYZ456pqrst";
+// ✅ USE ONLY ONE KEY
+const GIPHY_KEY = "PASTE_YOUR_REAL_KEY_HERE";
+
 export default function App() {
   const [name, setName] = useState("");
   const [room, setRoom] = useState("");
@@ -15,7 +16,6 @@ export default function App() {
 
   const [users, setUsers] = useState([]);
 
-  // 🔥 LOAD CHAT HISTORY (LOCAL)
   const [messages, setMessages] = useState(() => {
     const saved = localStorage.getItem("chat");
     return saved ? JSON.parse(saved) : [];
@@ -27,7 +27,6 @@ export default function App() {
   const [isMuted, setIsMuted] = useState(false);
   const [volumeLevel, setVolumeLevel] = useState(0);
 
-  // 🔥 EXTRA FEATURES
   const [typingUser, setTypingUser] = useState("");
   const [showEmoji, setShowEmoji] = useState(false);
   const [showGif, setShowGif] = useState(false);
@@ -63,7 +62,6 @@ export default function App() {
       detect();
     });
 
-    // 💬 CHAT
     socket.on("message", (data) => {
       if (data.type === "public") {
         const newMsg = {
@@ -187,7 +185,7 @@ export default function App() {
     setMsg((prev) => prev + e);
   }
 
-  // GIF SEARCH
+  // GIF
   async function searchGif() {
     if (!gifSearch) return;
 
@@ -216,7 +214,7 @@ export default function App() {
   }
 
   function leaveRoom() {
-    localStorage.removeItem("chat"); // optional
+    localStorage.removeItem("chat");
     window.location.reload();
   }
 
@@ -238,7 +236,6 @@ export default function App() {
 
     pc.ontrack = (e) => {
       const stream = e.streams[0];
-
       const audio = document.createElement("audio");
       audio.srcObject = stream;
       audio.autoplay = true;
@@ -252,7 +249,7 @@ export default function App() {
     return (
       <div className="login">
         <div className="card">
-          <h1>Free Frenzio</h1>
+          <h1>Frenzio</h1>
           <input placeholder="Name" onChange={(e) => setName(e.target.value)} />
           <input placeholder="Room" onChange={(e) => setRoom(e.target.value)} />
           <button onClick={enter}>Enter</button>
@@ -262,55 +259,83 @@ export default function App() {
   }
 
   return (
-    <div className="appContainer">
-      <div className="voiceSection">
-        <p>{room}</p>
-        <p>{users.length} users</p>
-        <p>{speakingCount} speaking</p>
+    <div className="wa-container">
+      {/* SIDEBAR */}
+      <div className="wa-sidebar">
+        <div className="wa-sidebar-header">
+          <div className="avatar">{name[0]}</div>
+          <h3>{name}</h3>
+        </div>
 
-        <button onClick={toggleMute}>{isMuted ? "Unmute" : "Mute"}</button>
-        <button onClick={leaveRoom}>Leave</button>
+        <div className="wa-room active">
+          <div className="avatar">{room[0]}</div>
+          <div>
+            <b>{room}</b>
+            <p>{users.length} online</p>
+          </div>
+        </div>
       </div>
 
-      <div className="chatSection">
-        <div ref={chatRef}>
+      {/* CHAT */}
+      <div className="wa-chat">
+        <div className="wa-header">
+          <div className="avatar">{room[0]}</div>
+          <div>
+            <b>{room}</b>
+            <p>{typingUser || `${users.length} online`}</p>
+          </div>
+
+          <div>
+            <button onClick={toggleMute}>{isMuted ? "🔇" : "🎤"}</button>
+            <button onClick={leaveRoom}>🚪</button>
+          </div>
+        </div>
+
+        {/* MESSAGES */}
+        <div className="wa-messages" ref={chatRef}>
           {messages.map((m, i) => (
-            <div key={i}>
-              <b>{m.user}</b> <small>{m.time}</small>
-              {m.text.startsWith("GIF:") ? (
-                <img src={m.text.replace("GIF:", "")} width={150} />
-              ) : m.text.startsWith("http") ? (
-                <a href={m.text} target="_blank">
-                  {m.text}
-                </a>
-              ) : (
-                <p>{m.text}</p>
-              )}
+            <div key={i} className={`wa-msg ${m.user === "Me" ? "me" : ""}`}>
+              <div className="bubble">
+                <small>{m.user}</small>
+
+                {m.text.startsWith("GIF:") ? (
+                  <img src={m.text.replace("GIF:", "")} />
+                ) : (
+                  <p>{m.text}</p>
+                )}
+
+                <span>{m.time}</span>
+              </div>
             </div>
           ))}
         </div>
 
-        {typingUser && <p>{typingUser} is typing...</p>}
+        {/* INPUT */}
+        <div className="wa-input">
+          <button onClick={() => setShowEmoji(!showEmoji)}>😊</button>
 
-        <input
-          value={msg}
-          onChange={handleTyping}
-          onKeyDown={(e) => e.key === "Enter" && send()}
-        />
+          <input
+            value={msg}
+            onChange={handleTyping}
+            onKeyDown={(e) => e.key === "Enter" && send()}
+          />
 
-        <button onClick={() => send()}>Send</button>
-        <button onClick={() => setShowEmoji(!showEmoji)}>😊</button>
-        <button onClick={() => setShowGif(!showGif)}>GIF</button>
+          <button onClick={() => setShowGif(!showGif)}>GIF</button>
+          <button onClick={() => send()}>➤</button>
+        </div>
 
-        {showEmoji &&
-          ["😀", "😂", "😍", "🔥", "👍"].map((e, i) => (
-            <span key={i} onClick={() => addEmoji(e)}>
-              {e}
-            </span>
-          ))}
+        {showEmoji && (
+          <div className="emoji-box">
+            {["😀", "😂", "😍", "🔥", "👍"].map((e, i) => (
+              <span key={i} onClick={() => addEmoji(e)}>
+                {e}
+              </span>
+            ))}
+          </div>
+        )}
 
         {showGif && (
-          <div>
+          <div className="gif-box">
             <input onChange={(e) => setGifSearch(e.target.value)} />
             <button onClick={searchGif}>Search</button>
 
